@@ -1,4 +1,15 @@
+const express = require("express");
 const { Client, GatewayIntentBits } = require("discord.js");
+
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("H Bot is alive 🚢");
+});
+
+app.listen(3000, () => {
+  console.log("Keep-alive server running");
+});
 
 const client = new Client({
   intents: [
@@ -15,22 +26,12 @@ client.on("messageCreate", async (message) => {
 
   const content = message.content.trim();
 
-  // Allow only "H" or "h"
   if (content === "H" || content === "h") {
-    try {
-      await message.react("✅");
-    } catch (err) {
-      console.log("Reaction failed:", err);
-    }
+    await message.react("✅");
     return;
   }
 
-  // Delete everything else
-  try {
-    await message.delete();
-  } catch (err) {
-    console.log("Delete failed:", err);
-  }
+  await message.delete().catch(() => {});
 });
 
 client.once("ready", () => {
