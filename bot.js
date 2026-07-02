@@ -8,7 +8,7 @@ const client = new Client({
   ],
 });
 
-const TOKEN = "YOUR_BOT_TOKEN_HERE";
+const TOKEN = process.env.TOKEN;
 
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
