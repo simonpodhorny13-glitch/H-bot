@@ -34,7 +34,7 @@ client.on("messageCreate", async (message) => {
   await message.delete().catch(() => {});
 });
 
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`H Bot is online as ${client.user.tag}`);
 });
 
