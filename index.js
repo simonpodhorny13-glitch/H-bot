@@ -1,5 +1,6 @@
 const express = require("express");
 const fs = require("fs");
+const axios = require("axios");
 const {
   Client,
   GatewayIntentBits,
@@ -13,6 +14,7 @@ const {
 // KEEP ALIVE SERVER
 // --------------------
 const app = express();
+app.use(express.json());
 
 app.get("/", (req, res) => {
   res.send("H Bot is alive 🚢");
@@ -35,6 +37,10 @@ const client = new Client({
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
+
+// RO-12 API
+const RO12_URL = process.env.RO12_URL; // your render link
+const API_KEY = process.env.H_API_KEY;
 
 // --------------------
 // DATA
@@ -65,8 +71,7 @@ const commands = [
     .setName("h")
     .setDescription("H bot system")
     .addSubcommand(sub =>
-      sub
-        .setName("setup")
+      sub.setName("setup")
         .setDescription("Setup H bot channels")
     )
     .toJSON()
@@ -75,19 +80,33 @@ const commands = [
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 (async () => {
-  try {
-    console.log("Registering slash commands...");
-
-    await rest.put(
-      Routes.applicationCommands(CLIENT_ID),
-      { body: commands }
-    );
-
-    console.log("Slash commands registered!");
-  } catch (err) {
-    console.log(err);
-  }
+  await rest.put(
+    Routes.applicationCommands(CLIENT_ID),
+    { body: commands }
+  );
 })();
+
+// --------------------
+// RO-12 REWARD FUNCTION
+// --------------------
+async function sendReward(userId, username, hCount) {
+  try {
+    const res = await axios.post(`${RO12_URL}/claim-h-reward`, {
+      userId,
+      username,
+      hCount
+    }, {
+      headers: {
+        "x-api-key": API_KEY
+      }
+    });
+
+    return res.data;
+  } catch (err) {
+    console.log("RO-12 error:", err.message);
+    return null;
+  }
+}
 
 // --------------------
 // MESSAGE SYSTEM
@@ -99,12 +118,13 @@ client.on("messageCreate", async (message) => {
   const userId = message.author.id;
   const channelName = message.channel.name;
 
+  if (!data[userId]) data[userId] = { h: 0, lastReward: 0 };
+
   // ONLY #h CHANNEL
   if (channelName === "h") {
     const now = Date.now();
     const last = cooldowns.get(userId) || 0;
 
-    // anti-spam 5s
     if (now - last < 5000) {
       try { await message.delete(); } catch {}
       return;
@@ -113,13 +133,34 @@ client.on("messageCreate", async (message) => {
     cooldowns.set(userId, now);
 
     if (content === "H" || content === "h") {
-      data[userId] = (data[userId] || 0) + 1;
+      data[userId].h += 1;
       saveData();
 
       try {
         await message.react("✅");
         await message.reply("H");
       } catch {}
+
+      // --------------------
+      // RO-12 TRIGGER (every 50 H)
+      // --------------------
+      if (data[userId].h % 50 === 0) {
+        const result = await sendReward(
+          userId,
+          message.author.username,
+          data[userId].h
+        );
+
+        if (result?.success) {
+          await message.channel.send(
+            `💰 RO-12 Reward: +$50 for ${message.author.username}!`
+          );
+        } else {
+          await message.channel.send(
+            `⏳ RO-12 reward not available (daily limit reached)`
+          );
+        }
+      }
 
       return;
     }
@@ -132,7 +173,7 @@ client.on("messageCreate", async (message) => {
   if (channelName === "bots") {
     if (content === "!hleaderboard") {
       const sorted = Object.entries(data)
-        .sort((a, b) => b[1] - a[1])
+        .sort((a, b) => b[1].h - a[1].h)
         .slice(0, 10);
 
       let text = "🏆 **H LEADERBOARD**\n\n";
@@ -141,7 +182,7 @@ client.on("messageCreate", async (message) => {
         text += "No Hs yet 😄";
       } else {
         for (let i = 0; i < sorted.length; i++) {
-          text += `${i + 1}. <@${sorted[i][0]}> — ${sorted[i][1]} H\n`;
+          text += `${i + 1}. <@${sorted[i][0]}> — ${sorted[i][1].h} H\n`;
         }
       }
 
@@ -151,51 +192,9 @@ client.on("messageCreate", async (message) => {
 });
 
 // --------------------
-// SLASH COMMAND HANDLER
-// --------------------
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
-  if (interaction.commandName === "h") {
-    if (interaction.options.getSubcommand() === "setup") {
-
-      const member = interaction.member;
-
-      // permission check
-      if (!member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-        return interaction.reply({
-          content: "Setup failed ❌\nMissing permissions: Manage Server",
-          ephemeral: true
-        });
-      }
-
-      const guild = interaction.guild;
-
-      const hChannel = guild.channels.cache.find(c => c.name === "h");
-      const botsChannel = guild.channels.cache.find(c => c.name === "bots");
-
-      if (!hChannel || !botsChannel) {
-        return interaction.reply({
-          content: "Setup failed ❌\nMissing channels: #h or #bots",
-          ephemeral: true
-        });
-      }
-
-      return interaction.reply({
-        content:
-          "Setup complete ✅\n" +
-          "• added #h channel\n" +
-          "• added #bots channel",
-        ephemeral: true
-      });
-    }
-  }
-});
-
-// --------------------
 // READY
 // --------------------
-client.once("clientReady", () => {
+client.once("ready", () => {
   console.log(`H Bot is online as ${client.user.tag}`);
 });
 
