@@ -9,7 +9,8 @@ const {
   REST,
   Routes,
   SlashCommandBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  ChannelType,
 } = require("discord.js");
 
 // --------------------
@@ -21,11 +22,12 @@ const app = express();
 app.use(express.json());
 
 app.get("/", (req, res) => {
-    res.send("H Bot is live");
+  res.send("H Bot is live");
 });
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-    console.log(`Keep-alive server running on ${PORT}`);
+  console.log(`Keep-alive server running on ${PORT}`);
 });
 
 // --------------------
@@ -74,6 +76,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName("h")
     .setDescription("H bot system")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
     .addSubcommand(sub =>
       sub.setName("setup")
         .setDescription("Setup H bot channels")
@@ -84,11 +87,89 @@ const commands = [
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 (async () => {
-  await rest.put(
-    Routes.applicationCommands(CLIENT_ID),
-    { body: commands }
-  );
+  try {
+    await rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      { body: commands }
+    );
+
+    console.log("Registered slash commands.");
+  } catch (err) {
+    console.error("Slash command register error:", err);
+  }
 })();
+
+// --------------------
+// SLASH COMMAND HANDLER
+// --------------------
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== "h") return;
+
+  const subcommand = interaction.options.getSubcommand();
+
+  if (subcommand !== "setup") return;
+
+  try {
+    if (!interaction.inGuild()) {
+      await interaction.reply({ content: "❌ `/h setup` can only be used in a server.", ephemeral: true });
+      return;
+    }
+
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels)) {
+      await interaction.reply({ content: "❌ You need **Manage Channels** to use `/h setup`.", ephemeral: true });
+      return;
+    }
+
+    const me = interaction.guild.members.me;
+    if (!me?.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      await interaction.reply({ content: "❌ I need the **Manage Channels** permission to create setup channels.", ephemeral: true });
+      return;
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    let category = interaction.guild.channels.cache.find(
+      channel => channel.type === ChannelType.GuildCategory && channel.name === "Bot commands"
+    );
+
+    if (!category) {
+      category = await interaction.guild.channels.create({
+        name: "Bot commands",
+        type: ChannelType.GuildCategory,
+      });
+    }
+
+    let hChannel = interaction.guild.channels.cache.find(
+      channel => channel.type === ChannelType.GuildText && channel.name === "h"
+    );
+
+    if (!hChannel) {
+      hChannel = await interaction.guild.channels.create({
+        name: "h",
+        type: ChannelType.GuildText,
+        parent: category.id,
+        topic: "H.",
+      });
+    } else if (!hChannel.parentId && category) {
+      await hChannel.setParent(category.id).catch(() => null);
+    }
+
+    await interaction.editReply(
+      `✅ H setup complete!\n\nCreated/found: ${hChannel}\n\nType **H** there to test me.`
+    );
+  } catch (err) {
+    console.error("/h setup error:", err);
+
+    const message = "❌ H setup crashed. Check the bot logs.";
+
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(message).catch(() => null);
+    } else {
+      await interaction.reply({ content: message, ephemeral: true }).catch(() => null);
+    }
+  }
+});
 
 // --------------------
 // RO-12 REWARD FUNCTION
