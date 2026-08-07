@@ -13,8 +13,15 @@ const {
 // --------------------
 // KEEP ALIVE SERVER
 // --------------------
-const PORT = process.env.PORT || 3000;
 
+const app = express();
+
+app.use(express.json());
+
+app.get("/", (req, res) => {
+    res.send("H Bot is live");
+});
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Keep-alive server running on ${PORT}`);
 });
