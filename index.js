@@ -205,4 +205,7 @@ client.once("ready", () => {
 // --------------------
 // LOGIN
 // --------------------
+console.log("Token exists:", !!TOKEN);
+console.log("Token length:", TOKEN?.length);
+
 client.login(TOKEN);
